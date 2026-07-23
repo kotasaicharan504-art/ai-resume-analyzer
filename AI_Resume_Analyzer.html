@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Resume Analyzer & ATS Checker</title>
+  <!-- Load PDF.js for parsing PDF text in the browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --success: #22c55e;
+      --warning: #eab308;
+      --danger: #ef4444;
+      --radius: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--text-muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (min-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .card h2 {
+      font-size: 1.15rem;
+      margin-bottom: 1rem;
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 2rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: #f1f5f9;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--primary);
+      background: #eef2ff;
+    }
+
+    .drop-zone p {
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .file-info {
+      margin-top: 0.75rem;
+      font-weight: 600;
+      color: var(--primary);
+      display: none;
+      word-break: break-all;
+    }
+
+    textarea {
+      width: 100%;
+      height: 140px;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      resize: vertical;
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .btn {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 0.85rem 1.5rem;
+      border-radius: var(--radius);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 1rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .btn:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .results-container {
+      display: none;
+      grid-column: 1 / -1;
+      margin-top: 1rem;
+    }
+
+    .score-box {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      background: #f8fafc;
+      padding: 1.25rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    .score-circle {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: conic-gradient(var(--primary) 0%, #e2e8f0 0%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .score-circle::before {
+      content: '';
+      position: absolute;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: white;
+    }
+
+    .score-text {
+      position: relative;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .tag-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .tag {
+      padding: 0.35rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .tag.matched {
+      background: #dcfce7;
+      color: #15803d;
+    }
+
+    .tag.missing {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .suggestions-list {
+      list-style: none;
+      margin-top: 0.5rem;
+    }
+
+    .suggestions-list li {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .suggestions-list li:last-child {
+      border-bottom: none;
+    }
+
+    .spinner {
+      display: none;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #ffffff;
+      border-top: 3px solid transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>AI Resume Analyzer & ATS Optimizer</h1>
+    <p>Upload your resume PDF and paste a job description to get a real-time match score.</p>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>📄 1. Upload Resume (PDF)</h2>
+      <div class="drop-zone" id="dropZone">
+        <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="color: var(--text-muted);">
+          <path d="M12 16.5V3m0 0L7.5 7.5M12 3l4.5 4.5M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5"></path>
+        </svg>
+        <p><strong>Click to upload</strong> or drag and drop</p>
+        <p>PDF files only</p>
+        <input type="file" id="fileInput" class="file-input" accept="application/pdf" />
+      </div>
+      <div id="fileInfo" class="file-info"></div>
+    </div>
+
+    <div class="card">
+      <h2>🎯 2. Target Job Description</h2>
+      <textarea id="jobDesc" placeholder="Paste the job description or required skills here..."></textarea>
+      <button id="analyzeBtn" class="btn">
+        <span id="btnText">Analyze Resume</span>
+        <div id="btnSpinner" class="spinner"></div>
+      </button>
+    </div>
+
+    <div id="resultsContainer" class="card results-container">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+          <h2>Analysis Results</h2>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">ATS Compatibility Breakdown</p>
+        </div>
+        <button id="downloadBtn" class="btn" style="width: auto; margin-top: 0; background: #059669;">
+          📥 Download Action Report
+        </button>
+      </div>
+
+      <div class="grid">
+        <div class="score-box">
+          <div class="score-circle" id="scoreCircle">
+            <span class="score-text" id="scoreValue">0%</span>
+          </div>
+          <div>
+            <h3 style="font-size: 1.1rem;" id="scoreStatus">Match Score</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted);" id="scoreDetail">Based on extracted text analysis.</p>
+          </div>
+        </div>
+
+        <div style="background: #f8fafc; padding: 1.25rem; border-radius: var(--radius); border: 1px solid var(--border);">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">Keywords Analysis</h3>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">Matched Terms:</p>
+          <div class="tag-container" id="matchedTags"></div>
+
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.75rem;">Missing Terms:</p>
+          <div class="tag-container" id="missingTags"></div>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem;">
+        <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">💡 Recommended Fixes</h3>
+        <ul class="suggestions-list" id="suggestionsList"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Set worker source for PDF.js
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileInfo = document.getElementById('fileInfo');
+  const jobDesc = document.getElementById('jobDesc');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const btnText = document.getElementById('btnText');
+  const btnSpinner = document.getElementById('btnSpinner');
+  const resultsContainer = document.getElementById('resultsContainer');
+
+  let uploadedFile = null;
+
+  // File Upload Handling
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) handleFile(e.target.files[0]);
+  });
+
+  function handleFile(file) {
+    if (file.type !== 'application/pdf') {
+      alert('Please upload a valid PDF file.');
+      return;
+    }
+    uploadedFile = file;
+    fileInfo.style.display = 'block';
+    fileInfo.textContent = `Attached: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+  }
+
+  // Extract text from uploaded PDF file using PDF.js
+  async function extractPdfText(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + ' ';
+    }
+    return fullText.toLowerCase();
+  }
+
+  // Extract meaningful keywords from text
+  function extractKeywords(text) {
+    const stopWords = new Set([
+      'and', 'or', 'the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'about',
+      'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+      'from', 'up', 'down', 'of', 'off', 'over', 'under', 'is', 'are', 'was', 'were', 'be',
+      'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'but', 'if', 'then', 'else',
+      'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other',
+      'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'can',
+      'will', 'just', 'should', 'now', 'you', 'your', 'we', 'our', 'must', 'experience', 'work', 'job'
+    ]);
+
+    const words = text.toLowerCase().replace(/[^a-z0-9+#\s]/g, ' ').split(/\s+/);
+    const keywords = words.filter(word => word.length > 2 && !stopWords.has(word));
+    return Array.from(new Set(keywords)); // return unique keywords
+  }
+
+  // Main Analyze Action
+  analyzeBtn.addEventListener('click', async () => {
+    if (!uploadedFile) {
+      alert('Please upload a PDF resume first.');
+      return;
+    }
+    const jdText = jobDesc.value.trim();
+    if (!jdText) {
+      alert('Please enter a job description.');
+      return;
+    }
+
+    // Toggle Loading State
+    btnText.style.display = 'none';
+    btnSpinner.style.display = 'block';
+    analyzeBtn.disabled = true;
+
+    try {
+      const resumeText = await extractPdfText(uploadedFile);
+      const jdKeywords = extractKeywords(jdText);
+
+      if (jdKeywords.length === 0) {
+        alert('Please enter a detailed job description with specific skills or keywords.');
+        return;
+      }
+
+      // Keyword Matching Logic
+      const matched = [];
+      const missing = [];
+
+      jdKeywords.forEach(kw => {
+        if (resumeText.includes(kw)) {
+          matched.push(kw);
+        } else {
+          missing.push(kw);
+        }
+      });
+
+      const score = Math.min(100, Math.round((matched.length / jdKeywords.length) * 100));
+
+      // Build Suggestions
+      const suggestions = [];
+      if (missing.length > 0) {
+        suggestions.push(`Integrate key terms naturally: <strong>${missing.slice(0, 5).join(', ')}</strong>.`);
+      }
+      if (!resumeText.includes('achieved') && !resumeText.includes('increased') && !resumeText.includes('managed')) {
+        suggestions.push('Use strong action verbs like <em>Engineered, Managed, Spearheaded, or Improved</em>.');
+      }
+      if (!/\d+%|\$\d+|\d+\+/.test(resumeText)) {
+        suggestions.push('Add measurable achievements using numbers or percentages (e.g., "Increased sales by 15%").');
+      }
+      suggestions.push('Ensure your contact information is in standard body text, not hidden inside PDF headers or footers.');
+
+      displayResults(score, matched.slice(0, 10), missing.slice(0, 10), suggestions);
+
+    } catch (err) {
+      console.error(err);
+      alert('Error parsing the PDF file. Please ensure it is a valid text-based PDF (not an image-only scan).');
+    } finally {
+      btnText.style.display = 'inline';
+      btnSpinner.style.display = 'none';
+      analyzeBtn.disabled = false;
+    }
+  });
+
+  function displayResults(score, matched, missing, suggestions) {
+    resultsContainer.style.display = 'block';
+    resultsContainer.scrollIntoView({ behavior: 'smooth' });
+
+    document.getElementById('scoreValue').textContent = `${score}%`;
+    document.getElementById('scoreCircle').style.background = `conic-gradient(var(--primary) ${score}%, #e2e8f0 ${score}%)`;
+
+    const scoreStatus = document.getElementById('scoreStatus');
+    if (score >= 75) scoreStatus.textContent = 'Strong Match 🎉';
+    else if (score >= 50) scoreStatus.textContent = 'Moderate Match ⚠️';
+    else scoreStatus.textContent = 'Needs Improvement ❌';
+
+    document.getElementById('matchedTags').innerHTML = matched.length 
+      ? matched.map(k => `<span class="tag matched">✓ ${k}</span>`).join('') 
+      : '<span style="font-size: 0.85rem; color: var(--text-muted);">None detected</span>';
+
+    document.getElementById('missingTags').innerHTML = missing.length 
+      ? missing.map(k => `<span class="tag missing">+ ${k}</span>`).join('') 
+      : '<span style="font-size: 0.85rem; color: var(--text-muted);">None missing!</span>';
+
+    document.getElementById('suggestionsList').innerHTML = suggestions
+      .map(s => `<li><span style="color: var(--primary);">•</span> <span>${s}</span></li>`)
+      .join('');
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    window.print();
+  });
+</script>
+
+</body>
+</html>
